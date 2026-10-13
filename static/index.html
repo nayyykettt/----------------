@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Погодный планировщик</title>
+<link rel="stylesheet" href="style.css">
+<script src="vendor/fullcalendar.min.js"></script>
+<script src="vendor/fc-ru.js"></script>
+</head>
+<body>
+<header>
+  <strong class="logo">Планировщик</strong>
+  <button id="today">Сегодня</button>
+  <button id="prev" class="icon" aria-label="Назад"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+  <button id="next" class="icon" aria-label="Вперёд"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+  <span id="title"></span>
+  <span class="grow"></span>
+  <div class="seg" role="group" aria-label="Вид">
+    <button data-view="timeGridDay">День</button>
+    <button data-view="timeGridWeek">Неделя</button>
+    <button data-view="dayGridMonth">Месяц</button>
+  </div>
+  <div class="city">
+    <label class="city-box"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+      <input id="city" placeholder="Город…" autocomplete="off" aria-label="Город"></label>
+    <ul id="city-list" hidden></ul>
+  </div>
+  <button id="import"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>Импорт .ics</button>
+  <input type="file" id="ics-file" accept=".ics,text/calendar" hidden>
+  <button id="settings-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Настройки</button>
+</header>
+
+<div class="layout">
+  <aside>
+    <section>
+      <h3>Шаблоны <button id="tpl-new" class="icon small" title="Новый шаблон" aria-label="Новый шаблон"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></h3>
+      <p class="hint">Перетащите в календарь или нажмите «+», чтобы создать задачу. Правый клик — настройка.</p>
+      <div id="templates"></div>
+    </section>
+    <section>
+      <h3><span>Не размещены <span id="un-count" class="count"></span></span> <button id="autoplace" class="small primary" title="Расставить все по приоритету">Расставить</button></h3>
+      <div id="unplaced"></div>
+    </section>
+    <section>
+      <h3>Температура, °C</h3>
+      <div id="legend"></div>
+      <p class="hint" id="forecast-info"></p>
+    </section>
+    <section>
+      <h3>Своя задача <button id="oneoff-new" class="icon small" title="Задача без шаблона" aria-label="Задача без шаблона"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></h3>
+      <p class="hint">Разовая задача со своими правилами — без создания шаблона.</p>
+    </section>
+  </aside>
+  <main>
+    <div id="banner" hidden></div>
+    <div id="calendar"></div>
+  </main>
+</div>
+<div id="toasts" aria-live="polite"></div>
+
+<dialog id="event-dlg">
+  <form method="dialog">
+    <h3 id="event-head">Событие</h3>
+    <label>Название <input name="title" required></label>
+    <label class="row"><input type="checkbox" name="all_day"> Весь день</label>
+    <div class="row">
+      <label>Начало <input type="datetime-local" name="start" required></label>
+      <label>Конец <input type="datetime-local" name="end" required></label>
+    </div>
+    <div class="row">
+      <label>Повтор
+        <select name="freq">
+          <option value="">Не повторять</option>
+          <option value="DAILY">Каждые N дней</option>
+          <option value="WEEKLY">Каждые N недель</option>
+          <option value="MONTHLY">Каждые N месяцев</option>
+        </select>
+      </label>
+      <label class="rep">N <input type="number" name="interval" min="1" value="1" style="width:4em"></label>
+    </div>
+    <div class="row rep weekly" id="byday"></div>
+    <div class="row rep">
+      <label class="row"><input type="radio" name="ends" value="never" checked> Без окончания</label>
+      <label class="row"><input type="radio" name="ends" value="until"> До <input type="date" name="until"></label>
+    </div>
+    <p class="hint" id="rrule-note"></p>
+    <menu>
+      <button value="delete" id="event-del" class="danger">Удалить</button>
+      <span class="grow"></span>
+      <button value="cancel" formnovalidate>Отмена</button>
+      <button value="save" class="primary">Сохранить</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="scope-dlg">
+  <form method="dialog">
+    <h3>Повторяющееся событие</h3>
+    <menu class="col">
+      <button value="one">Только это событие</button>
+      <button value="following">Это и последующие</button>
+      <button value="all">Вся серия</button>
+      <button value="">Отмена</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="task-dlg">
+  <form method="dialog">
+    <h3 id="task-head"></h3>
+    <p id="task-info"></p>
+    <menu class="col">
+      <button value="slots">Подобрать другое время</button>
+      <button value="edit" id="task-edit">Настройки задачи</button>
+      <button value="unpin" id="task-unpin">Открепить (снова участвует в автопереносе)</button>
+      <button value="unplace">Убрать из календаря</button>
+      <button value="delete" class="danger">Удалить задачу</button>
+      <button value="">Закрыть</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="tpl-dlg">
+  <form method="dialog" class="grid">
+    <h3 id="tpl-head">Шаблон</h3>
+    <label>Название <input name="name" required></label>
+    <label>Тип активности
+      <select name="activity"></select>
+    </label>
+    <div class="row">
+      <label>Длительность, мин <input type="number" name="duration" min="5" step="5" required></label>
+      <label>Буфер до, мин <input type="number" name="buf_before" min="0" step="5"></label>
+      <label>Буфер после, мин <input type="number" name="buf_after" min="0" step="5"></label>
+    </div>
+    <div class="row">
+      <label>Окно с <input type="time" name="win_from" required></label>
+      <label>до <input type="time" name="win_to" required></label>
+      <label>Цвет <input type="color" name="color"></label>
+    </div>
+    <fieldset><legend>Запрещённые дни</legend><div class="chips" id="tpl-days"></div></fieldset>
+    <label class="row switch"><span>Учитывать погоду</span><input type="checkbox" name="use_weather"></label>
+    <fieldset id="tpl-weather">
+      <div class="row">
+        <label>Температура от, °C <input type="number" name="t_min" step="1"></label>
+        <label>до, °C <input type="number" name="t_max" step="1"></label>
+      </div>
+      <div class="row">
+        <label>Осадки, не выше % <input type="number" name="precip_max" min="0" max="100"></label>
+        <label>Облачность, не выше % <input type="number" name="cloud_max" min="0" max="100"></label>
+        <label>Ветер (средний), не сильнее м/с <input type="number" name="wind_max" min="0" step="0.5"></label>
+      </div>
+      <div class="sub">Запрещённые явления</div>
+      <div class="chips">
+        <label><input type="checkbox" name="bad_phen" value="rain">Дождь</label>
+        <label><input type="checkbox" name="bad_phen" value="snow">Снег</label>
+        <label><input type="checkbox" name="bad_phen" value="thunder">Гроза</label>
+        <label><input type="checkbox" name="bad_phen" value="fog">Туман</label>
+      </div>
+    </fieldset>
+    <div class="row">
+      <label>Приоритет (1 — главный) <input type="number" name="priority" min="1"></label>
+      <label>Мин. интервал, дней между задачами <input type="number" name="min_gap" min="0"></label>
+    </div>
+    <menu>
+      <button value="delete" id="tpl-del" class="danger">Удалить шаблон</button>
+      <span class="grow"></span>
+      <button value="cancel" formnovalidate>Отмена</button>
+      <button value="save" class="primary">Сохранить</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="settings-dlg">
+  <form method="dialog">
+    <h3>Настройки</h3>
+    <fieldset>
+      <legend>Сон</legend>
+      <label class="row"><input type="radio" name="sleep_mode" value="simple"> Будни / выходные</label>
+      <label class="row"><input type="radio" name="sleep_mode" value="daily"> Каждый день отдельно</label>
+      <div id="sleep-simple">
+        <div class="row"><span class="lbl">Будни</span> отбой <input type="time" name="wd_bed"> подъём <input type="time" name="wd_wake"></div>
+        <div class="row"><span class="lbl">Выходные</span> отбой <input type="time" name="we_bed"> подъём <input type="time" name="we_wake"></div>
+      </div>
+      <div id="sleep-daily"></div>
+      <p class="hint">Отбой — вечер этого дня, подъём — утро этого дня. Отбой до 12:00 считается после полуночи.</p>
+    </fieldset>
+    <fieldset>
+      <legend>Профили активности (окна времени)</legend>
+      <div id="profiles"></div>
+      <button type="button" id="profile-add" class="small">+ Добавить профиль</button>
+    </fieldset>
+    <fieldset>
+      <legend>Проверка автопереноса</legend>
+      <p class="hint" id="fake-state"></p>
+      <div class="row">
+        <button type="button" id="fake-rain">Подменить прогноз: дождь (кроме последних 2 дней)</button>
+        <button type="button" id="fake-off">Вернуть настоящий прогноз</button>
+      </div>
+    </fieldset>
+    <menu>
+      <span class="grow"></span>
+      <button value="cancel" formnovalidate>Отмена</button>
+      <button value="save" class="primary">Сохранить</button>
+    </menu>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
