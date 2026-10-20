@@ -76,7 +76,16 @@ aside section { display: flex; flex-direction: column; gap: 2px; }
 .sh { display: flex; align-items: center; justify-content: space-between; padding: 0 6px 6px 2px; }
 aside h3 { margin: 0; font-size: 11.5px; font-weight: 700; color: var(--muted); }
 main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-#calendar { flex: 1; min-height: 0; touch-action: pan-y; }  /* горизонтальный жест — наш свайп, не прокрутка страницы */
+#cal-scroll { flex: 1; min-height: 0; position: relative; overflow: auto; overscroll-behavior-x: contain; }  /* contain — не листать историю */
+#cal-scroll.paged { overflow-x: scroll; scrollbar-width: none; }
+#cal-scroll.paged::-webkit-scrollbar:horizontal { display: none; }
+/* колонка часов стоит на месте, пока страницы едут под ней */
+.fc .fc-scroller-harness { overflow: visible; }
+.paged .fc .fc-timegrid-axis { position: sticky; left: 0; z-index: 4; background: var(--bg); }
+/* под осью в сетке часов уезжают колонки соседней страницы: её закрывает ось слоя колонок, а подписи часов — поверх */
+.paged .fc .fc-timegrid-slots { z-index: auto; }
+.paged .fc .fc-timegrid-col.fc-timegrid-axis { z-index: 5; }
+.paged .fc .fc-timegrid-slot-label { position: sticky; left: 0; z-index: 6; }
 
 /* панель инструментов и заголовок */
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px 4px 8px; }
@@ -282,7 +291,10 @@ menu.col button { width: 100%; }
 .switch input:checked::after { left: 18px; }
 
 @media (max-width: 760px) {
-  .layout { flex-direction: column; height: auto; min-height: 100%; }
-  aside { flex: none; margin: 0 0 8px; border-radius: 0 0 12px 12px; }
-  main { min-height: 80vh; }
+  /* панель сверху и прокручивается сама, календарь занимает остаток экрана и остаётся единственной лентой прокрутки */
+  .layout { flex-direction: column; }
+  aside { flex: none; max-height: 45vh; margin: 0 0 8px; border-radius: 0 0 12px 12px; }
+  main { min-height: 0; }
+  #title { font-size: 22px; }
 }
+.tpl .name { cursor: pointer; }

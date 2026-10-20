@@ -1,0 +1,34 @@
+# Сборка приложения под все платформы. Запускается только вручную: вкладка Actions → «Сборка» → Run workflow.
+# Готовые установщики — в разделе Artifacts запуска.
+name: Сборка
+on: workflow_dispatch
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: macOS, os: macos-latest, cmd: briefcase package macOS --adhoc-sign, out: dist/*.dmg}
+          - {name: Windows, os: windows-latest, cmd: briefcase package windows, out: dist/*.msi}
+          - {name: Linux, os: ubuntu-24.04, cmd: briefcase package linux system, out: dist/*.deb}
+          - {name: Android, os: ubuntu-24.04, cmd: briefcase package android -p debug-apk, out: dist/*.apk}
+          # iOS: здесь только проверка, что собирается; на iPhone ставится из Xcode с вашим Apple ID (см. README)
+          - {name: iOS, os: macos-latest, cmd: briefcase build iOS, out: build/weather_planner/ios/xcode/build/**/*.app}
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Системные библиотеки GTK и WebKit
+        if: matrix.name == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libcairo2-dev libgirepository-2.0-dev gir1.2-webkit2-4.1
+      - run: pip install briefcase==0.4.6
+      - run: ${{ matrix.cmd }} --no-input
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Погодный планировщик — ${{ matrix.name }}
+          path: ${{ matrix.out }}
+          if-no-files-found: error

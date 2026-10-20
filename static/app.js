@@ -76,9 +76,25 @@ function renderLegend() {
 }
 
 // ---------- календарь ----------
+// День и неделя рисуются лентой с запасом в обе стороны в горизонтальном скроллере: листание — свободная
+// прокрутка, а после остановки лента пересобирается вокруг видимого места, поэтому листать можно бесконечно.
+const DAY = 864e5;
+const STRIP = {days: {n: 1, buf: 15}, weeks: {n: 7, buf: 35}};  // n — дней на экране, buf — дней запаса с каждой стороны
+const strip = () => STRIP[cal.view?.type];
+const narrow = matchMedia('(max-width: 760px)').matches;  // телефон: по умолчанию день и свёрнутая панель
 const cal = new FullCalendar.Calendar($('#calendar'), {
-  locale: 'ru', timeZone: 'UTC', now: () => nowLocal(), initialView: 'timeGridWeek', headerToolbar: false,
-  firstDay: 1, nowIndicator: true, height: '100%', scrollTime: '07:00:00', allDayText: 'весь день',
+  locale: 'ru', timeZone: 'UTC', now: () => nowLocal(), initialView: narrow ? 'days' : 'weeks', headerToolbar: false,
+  views: {
+    weeks: {type: 'timeGrid', dateIncrement: {weeks: 1}, visibleRange: d => {
+      const mon = d.getTime() - (d.getUTCDay() + 6) % 7 * DAY - d.getTime() % DAY, {n, buf} = STRIP.weeks;
+      return {start: new Date(mon - buf * DAY), end: new Date(mon + (n + buf) * DAY)};
+    }},
+    days: {type: 'timeGrid', dateIncrement: {days: 1}, visibleRange: d => {
+      const day = d.getTime() - d.getTime() % DAY, {n, buf} = STRIP.days;
+      return {start: new Date(day - buf * DAY), end: new Date(day + (n + buf) * DAY)};
+    }},
+  },
+  firstDay: 1, nowIndicator: true, height: 'auto', allDayText: 'весь день',
   snapDuration: '00:15:00',  // шаг перетаскивания, растягивания и выделения
   slotLabelFormat: {hour: '2-digit', minute: '2-digit', hour12: false},
   eventTimeFormat: {hour: '2-digit', minute: '2-digit', hour12: false},
@@ -89,12 +105,9 @@ const cal = new FullCalendar.Calendar($('#calendar'), {
   editable: true, selectable: true, selectMirror: true, droppable: true, dayMaxEvents: true,
   events: (info, ok, fail) => loadEvents(info).then(ok, e => { toast(e.message, 'error'); fail(e); }),
   datesSet: () => {
-    const v = cal.view, mid = new Date((v.currentStart.getTime() + v.currentEnd.getTime()) / 2);
-    const m = mid.toLocaleString('ru', {month: 'long', timeZone: 'UTC'});
-    $('#title').innerHTML = `<b>${m[0].toUpperCase() + m.slice(1)}</b> ${mid.getUTCFullYear()} г.`;
-    document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.view === v.type));
-    mini = iso(cal.getDate()).slice(0, 7);
-    renderMini();
+    document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.view === cal.view.type));
+    layoutPages(true);
+    updatePage(true);
   },
   select: info => { cal.unselect(); openEvent({start: iso(info.start), end: iso(info.end), all_day: info.allDay}); },
   eventClick: info => onClick(info.event),
@@ -138,6 +151,7 @@ function moveTip(e) {
   t.style.top = (e.clientY - r.height - 12 < 8 ? e.clientY + 18 : e.clientY - r.height - 12) + 'px';
 }
 function hideTip() { $('#tip').hidden = true; }
+document.addEventListener('touchstart', hideTip, {passive: true});  // на касаниях нет «увода мыши»: подсказку прячет следующее касание
 
 async function loadEvents(info) {
   const d = await api('GET', `/api/calendar?start=${iso(info.start)}&end=${iso(info.end)}`);
@@ -309,8 +323,8 @@ async function showSlots(taskId) {
   await refresh();
   suggest.title = state.tasks.find(x => x.id === taskId)?.title || 'Задача';
   if (r.slots.length) {
-    if (cal.view.type === 'dayGridMonth') cal.changeView('timeGridWeek');
-    cal.gotoDate(r.slots[0].start.slice(0, 10));
+    if (cal.view.type === 'dayGridMonth') cal.changeView('weeks');
+    goDate(r.slots[0].start);
   }
   renderBanner();
 }
@@ -361,7 +375,7 @@ function renderSide() {
     ? `Прогноз до ${human(state.forecast_end)} (${state.city.timezone})${state.fake_weather ? ' · ПОДМЕНА: дождь' : ''}`
     : 'Прогноза нет — задачи с учётом погоды не планируются';
   $('#templates').innerHTML = state.templates.filter(t => !t.oneoff).map(t => `
-    <div class="tpl" data-id="${t.id}" style="--c:${esc(t.color)}" title="Перетащите в календарь. Правый клик — настройка">
+    <div class="tpl" data-id="${t.id}" style="--c:${esc(t.color)}" title="Перетащите в календарь. Нажмите на название — настройка">
       <button class="add" title="Создать задачу из шаблона" aria-label="Создать задачу из шаблона"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
       <span class="name">${esc(t.name)}</span>
       <span class="meta">${t.duration} мин  П${t.priority}${t.use_weather ? '  ☂' : ''}</span>
@@ -369,6 +383,7 @@ function renderSide() {
   document.querySelectorAll('.tpl').forEach(el => {
     const t = state.templates.find(x => x.id === +el.dataset.id);
     el.oncontextmenu = e => { e.preventDefault(); openTemplate(t); };
+    el.querySelector('.name').onclick = () => openTemplate(t);  // на телефоне правого клика нет
     el.querySelector('.add').onclick = () => guard(() => newTask(t.id));
   });
   const un = state.tasks.filter(t => !t.start).sort((a, b) => a.priority - b.priority);
@@ -414,7 +429,8 @@ async function openTemplate(t, oneoff = false) {
   const act = await dialog(dlg);
   await guard(async () => {
     if (act === 'delete') {
-      if (!confirm(`Удалить шаблон «${t.name}» и все его задачи?`)) return;
+      $('#confirm-text').textContent = `Удалить шаблон «${t.name}» и все его задачи?`;
+      if (await dialog($('#confirm-dlg')) !== 'ok') return;  // не confirm(): встроенный WebView Android его молча отклоняет
       await api('DELETE', `/api/templates/${t.id}`);
       return refresh();
     }
@@ -500,36 +516,106 @@ $('#city').oninput = () => {
 $('#city').onblur = () => setTimeout(() => { $('#city-list').hidden = true; if (state) $('#city').value = state.city.name; }, 200);
 
 // ---------- верхняя панель ----------
-$('#today').onclick = () => cal.today();
-$('#prev').onclick = () => cal.prev();
-$('#next').onclick = () => cal.next();
+$('#today').onclick = () => goDate(nowLocal());
+$('#prev').onclick = () => stepPage(-1);
+$('#next').onclick = () => stepPage(1);
 
-// горизонтальная прокрутка (свайп тачпадом или Shift + колесо) листает период: один жест — один шаг
+// ---------- листание ----------
+const scroller = $('#cal-scroll');
+let page = ['', ''], pageKey = '';  // видимые дни: [начало, конец), для заголовка и мини-календаря
+let colW = 0, pendingIdx = null;      // ширина колонки дня; куда встать после пересборки ленты (в днях от её начала)
+const dayIdx = () => scroller.scrollLeft / colW;
+
+function layoutPages(reset) {
+  const s = strip(), el = $('#calendar');
+  scroller.classList.toggle('paged', !!s);
+  if (!s) { colW = 0; if (el.style.width) { el.style.width = ''; cal.updateSize(); } return; }
+  const axis = el.querySelector('.fc-timegrid-axis')?.offsetWidth || 56, c = (scroller.clientWidth - axis) / s.n;
+  const idx = reset ? pendingIdx ?? s.buf : colW ? dayIdx() : s.buf;  // при смене размера остаёмся на том же дне
+  const width = Math.round(axis + (2 * s.buf + s.n) * c) + 'px';
+  if (el.style.width !== width) { el.style.width = width; cal.updateSize(); }
+  colW = c; pendingIdx = null;
+  scroller.scrollLeft = idx * c;
+}
+new ResizeObserver(() => { layoutPages(false); updatePage(); }).observe(scroller);
+
+function updatePage(force) {
+  const v = cal.view, s = strip();
+  const p0 = s && colW ? v.currentStart.getTime() + Math.round(dayIdx()) * DAY : v.currentStart.getTime();
+  const p1 = s ? p0 + s.n * DAY : v.currentEnd.getTime();
+  if (!force && pageKey === `${p0}|${p1}`) return;
+  pageKey = `${p0}|${p1}`;
+  page = [iso(new Date(p0)).slice(0, 10), iso(new Date(p1)).slice(0, 10)];
+  const mid = new Date((p0 + p1) / 2), m = mid.toLocaleString('ru', {month: 'long', timeZone: 'UTC'});
+  $('#title').innerHTML = `<b>${m[0].toUpperCase() + m.slice(1)}</b> ${mid.getUTCFullYear()} г.`;
+  mini = iso(mid).slice(0, 7);
+  renderMini();
+}
+
+// прокрутка остановилась далеко от середины ленты — пересобираем ленту вокруг видимого места без скачка
+let settleT, pageRaf;
+function settle() {
+  const s = strip();
+  if (!s || !colW) return;
+  const idx = dayIdx(), shift = Math.round((idx - s.buf) / s.n) * s.n;  // у недели — целыми неделями, лента начинается с понедельника
+  if (Math.abs(idx - s.buf) < s.buf / 2) return;
+  pendingIdx = idx - shift;
+  cal.incrementDate({days: shift});
+}
+const hasScrollEnd = 'onscrollend' in window;  // scrollend есть не во всех движках
+scroller.addEventListener('scroll', () => {
+  if (!pageRaf) pageRaf = requestAnimationFrame(() => { pageRaf = 0; updatePage(); });
+  clearTimeout(settleT); settleT = setTimeout(settle, hasScrollEnd ? 500 : 150);
+}, {passive: true});
+if (hasScrollEnd) scroller.addEventListener('scrollend', () => { clearTimeout(settleT); settle(); });
+
+// стрелки — плавно на экран вперёд или назад, к началу недели (дня)
+function stepPage(dir) {
+  const s = strip();
+  if (!s || !colW) return stepMonth(dir);
+  scroller.scrollTo({left: (Math.round(dayIdx() / s.n) + dir) * s.n * colW, behavior: 'smooth'});
+}
+// к дате: если она уже в ленте — доезжаем плавно, иначе перестраиваем ленту вокруг неё
+function goDate(ds) {
+  const s = strip();
+  if (s && colW) {
+    let idx = (Date.parse(ds.slice(0, 10) + 'T00:00:00Z') - cal.view.currentStart.getTime()) / DAY;
+    idx -= idx % s.n;
+    if (idx >= 0 && idx <= 2 * s.buf) return scroller.scrollTo({left: idx * colW, behavior: 'smooth'});
+  }
+  cal.gotoDate(ds.slice(0, 10));
+}
+
+// в месяце страниц нет: жест листает на шаг с короткой анимацией въезда
+function stepMonth(dir) {
+  dir > 0 ? cal.next() : cal.prev();
+  $('#calendar .fc-view-harness')?.animate([{transform: `translateX(${dir * 48}px)`, opacity: 0}, {transform: 'none', opacity: 1}],
+    {duration: 220, easing: 'ease-out'});
+}
 let swipeX = 0, swiped = false, swipeIdle;
-$('#calendar').addEventListener('wheel', e => {
+scroller.addEventListener('wheel', e => {
+  if (strip()) return;  // день и неделя прокручиваются нативно
   const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.shiftKey ? e.deltaY : 0;
   if (!dx) return;
-  e.preventDefault();  // не даём системе листать историю
+  e.preventDefault();
   clearTimeout(swipeIdle);
   swipeIdle = setTimeout(() => { swipeX = 0; swiped = false; }, 250);  // инерция тачпада — часть того же жеста
   if (swiped) return;
   swipeX += dx;
   if (Math.abs(swipeX) < 80) return;
-  swipeX > 0 ? cal.next() : cal.prev();
+  stepMonth(swipeX);
   swiped = true;
 }, {passive: false});
-
-// свайп пальцем на телефоне; быстрый жест, чтобы не мешать долгому нажатию, которым FullCalendar таскает задачи
 let touch0 = null;
-$('#calendar').addEventListener('touchstart', e => {
+scroller.addEventListener('touchstart', e => {
   const t = e.touches[0];
-  touch0 = e.touches.length === 1 ? {x: t.clientX, y: t.clientY, at: Date.now()} : null;
+  touch0 = !strip() && e.touches.length === 1 ? {x: t.clientX, y: t.clientY, at: Date.now()} : null;
 }, {passive: true});
-$('#calendar').addEventListener('touchend', e => {
+scroller.addEventListener('touchend', e => {
   if (!touch0) return;
   const t = e.changedTouches[0], dx = t.clientX - touch0.x, dy = t.clientY - touch0.y, quick = Date.now() - touch0.at < 600;
   touch0 = null;
-  if (quick && Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) dx < 0 ? cal.next() : cal.prev();
+  if (quick && Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) stepMonth(-dx);
 }, {passive: true});
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => cal.changeView(b.dataset.view));
 $('#import').onclick = () => $('#ics-file').click();
@@ -552,7 +638,7 @@ function setSide(open) {
   cal.updateSize();
 }
 $('#side-btn').onclick = () => setSide($('#side').hidden);
-try { if (localStorage.side === '0') setSide(false); } catch {}
+try { if (localStorage.side === '0' || (narrow && !localStorage.side)) setSide(false); } catch {}
 
 // ---------- мини-календарь ----------
 let mini = '';  // 'YYYY-MM' показанного месяца
@@ -561,7 +647,7 @@ function renderMini() {
   const first = new Date(mini + '-01T00:00:00Z'), start = new Date(first);
   start.setUTCDate(1 - (first.getUTCDay() + 6) % 7);
   const today = nowLocal().slice(0, 10), v = cal.view;
-  const wk0 = iso(v.currentStart).slice(0, 10), wk1 = iso(v.currentEnd).slice(0, 10), inView = v.type !== 'dayGridMonth';
+  const [wk0, wk1] = page, inView = v.type !== 'dayGridMonth';
   let cells = WD.map(d => `<span class="wd">${d}</span>`).join('');
   for (let i = 0; i < 42; i++) {
     const d = new Date(start); d.setUTCDate(start.getUTCDate() + i);
@@ -576,7 +662,7 @@ function renderMini() {
 }
 $('#mini').onclick = e => {
   const b = e.target.closest('button');
-  if (b?.dataset.d) cal.gotoDate(b.dataset.d);
+  if (b?.dataset.d) goDate(b.dataset.d);
   if (b?.dataset.m) { const d = new Date(mini + '-15T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + +b.dataset.m); mini = iso(d).slice(0, 7); renderMini(); }
 };
 $('#autoplace').onclick = () => guard(async () => { toasts(await api('POST', '/api/tasks/autoplace')); await refresh(); });
@@ -592,6 +678,7 @@ async function refreshWeather() {
   renderLegend();
   await guard(refresh);
   cal.render();
+  scroller.scrollTop = 7 * 44;
   await refreshWeather();
   setInterval(refreshWeather, 3600 * 1000);
 })();

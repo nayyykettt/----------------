@@ -1,0 +1,79 @@
+# Сборка приложения под macOS, Windows, Linux, iOS и Android: BeeWare Briefcase.
+# Команды — в README.md, раздел «Сборка под все платформы».
+[tool.briefcase]
+project_name = "weather-planner"
+bundle = "io.github.nayyykettt"
+version = "1.0.0"
+url = "https://github.com/nayyykettt"
+license = "LicenseRef-Proprietary"  # лицензию не выбирали — «все права защищены»
+author = "nayyykettt"
+author_email = "artem0906072@gmail.com"
+
+[tool.briefcase.app.weather_planner]
+formal_name = "Погодный планировщик"
+description = "Календарь, который расставляет задачи с учётом погоды"
+icon = "icons/icon"
+sources = [
+    "weather_planner",
+    "server.py",
+    "scheduler.py",
+    "ical.py",
+    "static",
+]
+test_sources = ["tests"]
+requires = [
+    "python-dateutil>=2.8",
+    "tzdata",   # часовые пояса для zoneinfo: на Windows и Android своей базы нет
+    "certifi",  # корневые сертификаты для HTTPS к Open-Meteo
+]
+
+[tool.briefcase.app.weather_planner.macOS]
+universal_build = true
+# codesign не подписывает приложение с кириллицей в имени исполняемого файла, поэтому имя файла латиницей,
+# а в Dock, меню и окне — русское название
+formal_name = "Weather Planner"
+info."CFBundleName" = "Погодный планировщик"
+info."CFBundleDisplayName" = "Погодный планировщик"
+requires = ["toga-cocoa~=0.5.0", "std-nslog~=2.0.0"]
+
+[tool.briefcase.app.weather_planner.windows]
+requires = ["toga-winforms~=0.5.0"]  # WebView — Edge WebView2, есть в Windows 10 и 11
+
+[tool.briefcase.app.weather_planner.linux]
+requires = ["toga-gtk~=0.5.0"]
+
+[tool.briefcase.app.weather_planner.linux.system.debian]
+system_requires = ["libcairo2-dev", "libgirepository-2.0-dev"]
+system_runtime_requires = ["gir1.2-gtk-3.0", "libgirepository-2.0-0", "libcanberra-gtk3-module", "gir1.2-webkit2-4.1"]
+
+[tool.briefcase.app.weather_planner.linux.system.rhel]
+system_requires = ["cairo-gobject-devel", "gobject-introspection-devel"]
+system_runtime_requires = ["gobject-introspection", "gtk3", "libcanberra-gtk3", "webkit2gtk4.1"]
+
+[tool.briefcase.app.weather_planner.linux.system.suse]
+system_requires = ["cairo-devel", "gobject-introspection-devel"]
+system_runtime_requires = ["gtk3", "gobject-introspection", "typelib(Gtk) = 3.0", "libcanberra-gtk3-module", "libwebkit2gtk3", "typelib(WebKit2)"]
+
+[tool.briefcase.app.weather_planner.linux.system.arch]
+system_requires = ["cairo", "gobject-introspection", "gtk3", "libcanberra", "webkit2gtk"]
+system_runtime_requires = ["gtk3", "gobject-introspection-runtime", "libcanberra", "webkit2gtk"]
+
+[tool.briefcase.app.weather_planner.linux.flatpak]
+flatpak_runtime = "org.gnome.Platform"
+flatpak_runtime_version = "48"
+flatpak_sdk = "org.gnome.Sdk"
+
+[tool.briefcase.app.weather_planner.iOS]
+requires = ["toga-iOS~=0.5.0"]
+info."NSAppTransportSecurity" = { NSAllowsLocalNetworking = true }  # WebView ходит на http://127.0.0.1
+
+[tool.briefcase.app.weather_planner.android]
+requires = ["toga-android~=0.5.0"]
+base_theme = "Theme.MaterialComponents.Light.DarkActionBar"
+build_gradle_dependencies = [
+    "com.google.android.material:material:1.13.0",
+    "androidx.webkit:webkit:1.15.0",  # для WebView
+]
+build_gradle_extra_content = """
+chaquopy.defaultConfig.staticProxy("toga_android.widgets.internal.webview")
+"""
