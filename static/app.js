@@ -27,10 +27,20 @@ const dayName = s => { const d = new Date(s.slice(0, 10) + 'T00:00:00Z'); return
 const human = s => `${dayName(s)} ${s.slice(8, 10)}.${s.slice(5, 7)} ${hm(s)}`;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 
+const ICON = {
+  lock: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Закреплена"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  warn: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#e08a00" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Нарушены погодные правила"><path d="M12 3l10 18H2zM12 10v5M12 18v.5"/></svg>',
+  clock: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  rain: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a5 5 0 1 1 .8-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 7.9M8 21l1-2M12 21l1-2M16 21l1-2"/></svg>',
+  alert: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>',
+  prev: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
+  next: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
+};
+
 function toast(msg, kind = '') {
   const el = document.createElement('div');
   el.className = 'toast ' + kind;
-  el.innerHTML = `<span>${esc(msg)}</span><button aria-label="Закрыть"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`;
+  el.innerHTML = `${kind === 'error' ? ICON.alert : /перен/i.test(msg) ? ICON.rain : ''}<span>${esc(msg)}</span><button aria-label="Закрыть"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`;
   el.querySelector('button').onclick = () => el.remove();
   $('#toasts').append(el);
   setTimeout(() => el.remove(), 20000);
@@ -49,12 +59,20 @@ function tempRgb(t) {
   }
   return STOPS.at(-1)[1];
 }
+const sign = t => (t > 0 ? '+' : t < 0 ? '−' : '') + Math.abs(t);
+const darkInk = ([r, g, b]) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.55;  // тёмный текст на светлом фоне
 function renderLegend() {
   const grad = STOPS.map(([t, c]) => `rgb(${c}) ${((t + 30) / 65 * 100).toFixed(1)}%`).join(',');
-  $('#legend').innerHTML = `<div class="bar" style="background:linear-gradient(90deg,${grad})"></div>
-    <div class="ticks"><span>−30</span><span>−15</span><span>0</span><span>+15</span><span>+35</span></div>
-    <h3>Вероятность осадков</h3>
-    <div class="rain-legend">${[1, 2, 3].map(i => `<div><span class="rain-${i}"></span>${i * 30} %</div>`).join('')}</div>`;
+  document.documentElement.style.setProperty('--legend', `linear-gradient(90deg,${grad})`);
+  let cells = '';
+  for (let t = -30; t <= 35; t += 5) {
+    const c = tempRgb(t);
+    cells += `<span style="background:rgb(${c});color:${darkInk(c) ? '#1d1d1f' : '#fff'}">${sign(t)}</span>`;
+  }
+  $('#legend').innerHTML = `<h3>Температура, °C</h3><div class="temp-grid">${cells}</div>
+    <h3 class="next">Вероятность осадков</h3>
+    <div class="rain-legend">${[1, 2, 3].map(i => `<div><span class="rain-${i}"></span>${i * 30} %</div>`).join('')}</div>
+    <p id="forecast-info"></p>`;
 }
 
 // ---------- календарь ----------
@@ -64,21 +82,62 @@ const cal = new FullCalendar.Calendar($('#calendar'), {
   snapDuration: '00:15:00',  // шаг перетаскивания, растягивания и выделения
   slotLabelFormat: {hour: '2-digit', minute: '2-digit', hour12: false},
   eventTimeFormat: {hour: '2-digit', minute: '2-digit', hour12: false},
-  dayHeaderContent: a => a.view.type === 'dayGridMonth' ? a.text
-    : {html: `<span class="dn">${WD[(a.date.getUTCDay() + 6) % 7]}</span><span class="dd">${a.date.getUTCDate()}</span>`},
+  dayHeaderContent: a => a.view.type === 'dayGridMonth' ? WD[(a.date.getUTCDay() + 6) % 7]
+    : {html: `<span>${WD[(a.date.getUTCDay() + 6) % 7]},</span><span class="dd">${a.date.getUTCDate()}</span>`},
+  nowIndicatorContent: a => a.isAxis ? iso(a.date).slice(11, 16) : '',
+  eventContent: a => eventHtml(a),
   editable: true, selectable: true, selectMirror: true, droppable: true, dayMaxEvents: true,
   events: (info, ok, fail) => loadEvents(info).then(ok, e => { toast(e.message, 'error'); fail(e); }),
   datesSet: () => {
-    $('#title').textContent = cal.view.title;
-    document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.view === cal.view.type));
+    const v = cal.view, mid = new Date((v.currentStart.getTime() + v.currentEnd.getTime()) / 2);
+    const m = mid.toLocaleString('ru', {month: 'long', timeZone: 'UTC'});
+    $('#title').innerHTML = `<b>${m[0].toUpperCase() + m.slice(1)}</b> ${mid.getUTCFullYear()} г.`;
+    document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.view === v.type));
+    mini = iso(cal.getDate()).slice(0, 7);
+    renderMini();
   },
   select: info => { cal.unselect(); openEvent({start: iso(info.start), end: iso(info.end), all_day: info.allDay}); },
   eventClick: info => onClick(info.event),
   eventDrop: info => onMove(info),
   eventResize: info => onMove(info),
   drop: info => guard(() => newTask(info.draggedEl.dataset.id)),
-  eventDidMount: info => { const t = info.event.extendedProps.tip; if (t) info.el.title = t; },
+  eventDidMount: info => {
+    const p = info.event.extendedProps;
+    if (p.color) info.el.style.setProperty('--c', p.color);
+    if (p.tip) { info.el.onmouseenter = e => showTip(p.tip, e); info.el.onmousemove = moveTip; info.el.onmouseleave = hideTip; }
+  },
+  eventWillUnmount: hideTip,
 });
+
+// содержимое событий: значки, время и температура в каждом часе задачи
+let wxByHour = {};
+const PX_MIN = 44 / 60;  // высота часа в сетке — 44 px
+function eventHtml(a) {
+  const p = a.event.extendedProps;
+  if (!p.kind || a.view.type === 'dayGridMonth') return true;  // фон (погода, сон, буфер) и месяц — по умолчанию
+  const s = iso(a.event.start), e = a.event.end ? iso(a.event.end) : s;
+  if (p.kind === 'slot') return {html: `<div class="ev-t"><span class="num">${p.num}</span><span>${hm(s)} – ${hm(e)}</span></div>`};
+  let html = `<div class="ev-t">${p.task?.pinned ? ICON.lock : ''}${p.task?.warnings ? ICON.warn : ''}<span>${esc(a.event.title)}</span></div>`;
+  if (!a.event.allDay) html += `<div class="ev-time">${ICON.clock}<span>${hm(s)} – ${hm(e)}</span></div>`;
+  if (p.kind === 'task') {
+    const t0 = Date.parse(s + 'Z'), h = (Date.parse(e + 'Z') - t0) / 6e4 * PX_MIN - 2;
+    for (let t = t0 - t0 % 36e5; t < Date.parse(e + 'Z'); t += 36e5) {
+      const w = wxByHour[iso(new Date(t)).slice(0, 13)], pos = Math.max(0, (t - t0) / 6e4 * PX_MIN) + 4;
+      if (!w || pos + 16 > h) continue;
+      const c = tempRgb(w.temp);
+      html += `<span class="ev-tmp" title="Температура в этот час" style="top:${pos}px;background:rgb(${c});color:${darkInk(c) ? '#1d1d1f' : '#fff'}">${sign(Math.round(w.temp))}°</span>`;
+    }
+  }
+  return {html};
+}
+
+function showTip(text, e) { const t = $('#tip'); t.textContent = text; t.hidden = false; moveTip(e); }
+function moveTip(e) {
+  const t = $('#tip'), r = t.getBoundingClientRect();
+  t.style.left = Math.min(e.clientX + 14, innerWidth - r.width - 8) + 'px';
+  t.style.top = (e.clientY - r.height - 12 < 8 ? e.clientY + 18 : e.clientY - r.height - 12) + 'px';
+}
+function hideTip() { $('#tip').hidden = true; }
 
 async function loadEvents(info) {
   const d = await api('GET', `/api/calendar?start=${iso(info.start)}&end=${iso(info.end)}`);
@@ -96,25 +155,25 @@ async function loadEvents(info) {
     if (t.warnings) cls.push('warn');
     const tip = [t.title, t.pinned ? '🔒 закреплена вручную' : 'гибкая задача',
       t.warnings && '⚠ ' + t.warnings, t.highlight && t.note].filter(Boolean).join('\n');
-    out.push({id: `t|${t.id}`, title: (t.pinned ? '🔒 ' : '') + (t.warnings ? '⚠ ' : '') + t.title,
-      start: t.start, end: t.end, classNames: cls, backgroundColor: t.color, borderColor: t.color,
-      durationEditable: false, extendedProps: {kind: 'task', task: t, tip}});
+    out.push({id: `t|${t.id}`, title: t.title, start: t.start, end: t.end, classNames: cls,
+      ...(timed ? {} : {backgroundColor: t.color}),
+      durationEditable: false, extendedProps: {kind: 'task', task: t, tip, color: t.color}});
     if (timed) {
       if (t.buf_start < t.start) out.push({start: t.buf_start, end: t.start, display: 'background', classNames: ['buffer']});
       if (t.end < t.buf_end) out.push({start: t.end, end: t.buf_end, display: 'background', classNames: ['buffer']});
     }
   }
+  const tint = getComputedStyle(document.documentElement).getPropertyValue('--tint').trim() || 0.8;  // своя для светлой и тёмной темы
+  wxByHour = Object.fromEntries(d.weather.map(w => [w.start.slice(0, 13), w]));
   if (timed) {
     for (const s of d.sleep) out.push({start: s.start, end: s.end, display: 'background', classNames: ['sleep'],
       extendedProps: {tip: 'Сон'}});
     for (const w of d.weather) {
-      const [r, g, b] = tempRgb(w.temp), t = Math.round(w.temp);
-      const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;  // тёмный текст на светлых ячейках
-      const pp = w.pp ?? 0;
-      out.push({start: w.start, end: w.end, display: 'background', backgroundColor: `rgba(${r},${g},${b},0.85)`,
-        title: (t > 0 ? '+' : t < 0 ? '−' : '') + Math.abs(t) + '°',
-        classNames: ['wx', lum > 0.55 ? 'ink-dark' : 'ink-light', pp >= 30 ? `rain-${Math.min(3, Math.floor(pp / 30))}` : ''].filter(Boolean),
-        extendedProps: {tip: `${hm(w.start)}: ${w.temp > 0 ? '+' : ''}${w.temp.toFixed(0)} °C\n` +
+      const c = tempRgb(w.temp), pp = w.pp ?? 0;
+      out.push({start: w.start, end: w.end, display: 'background', backgroundColor: `rgba(${c},${tint})`,
+        title: sign(Math.round(w.temp)) + '°',
+        classNames: ['wx', darkInk(c) ? 'ink-dark' : 'ink-light', pp >= 30 ? `rain-${Math.min(3, Math.floor(pp / 30))}` : ''].filter(Boolean),
+        extendedProps: {tip: `${hm(w.start)} · ${sign(Math.round(w.temp))} °C\n` +
           `Осадки: ${w.pr ?? 0} мм, вероятность ${w.pp ?? 0}%${w.phen.length ? ' (' + w.phen.join(', ') + ')' : ''}\n` +
           `Облачность: ${w.cloud ?? 0}%\nВетер: ${(w.wind ?? 0).toFixed(1)} м/с, порывы ${(w.gust ?? 0).toFixed(1)} м/с`}});
     }
@@ -122,7 +181,7 @@ async function loadEvents(info) {
   if (suggest) suggest.slots.forEach((s, i) => out.push({
     id: `s|${i}`, title: `Вариант ${i + 1}` + (s.violations.length ? ' ⚠' : ''), start: s.start, end: s.end,
     editable: false, classNames: ['slot', s.violations.length ? 'worst' : 'good'],
-    extendedProps: {kind: 'slot', slot: s, tip: s.violations.length ? 'Нарушено: ' + s.violations.join('; ') : 'Все правила соблюдены'}}));
+    extendedProps: {kind: 'slot', slot: s, num: i + 1, tip: s.violations.length ? 'Нарушено: ' + s.violations.join('; ') : 'Все правила соблюдены'}}));
   return out;
 }
 
@@ -275,7 +334,7 @@ function renderBanner() {
 async function openTask(t) {
   if (t.highlight) guard(() => api('PUT', `/api/tasks/${t.id}`, {highlight: false}).then(refresh));
   const dlg = $('#task-dlg');
-  $('#task-head').textContent = (t.pinned ? '🔒 ' : '') + t.title;
+  $('#task-head').textContent = t.title;
   $('#task-info').innerHTML = `${human(t.start)} – ${hm(t.end)}<br>` +
     (t.pinned ? 'Закреплена вручную: автоперенос её не трогает.' : 'Не закреплена: при плохой погоде перенесётся автоматически.') +
     (t.warnings ? `<br><span class="warn-text">⚠ ${esc(t.warnings)}</span>` : '') +
@@ -302,10 +361,10 @@ function renderSide() {
     ? `Прогноз до ${human(state.forecast_end)} (${state.city.timezone})${state.fake_weather ? ' · ПОДМЕНА: дождь' : ''}`
     : 'Прогноза нет — задачи с учётом погоды не планируются';
   $('#templates').innerHTML = state.templates.filter(t => !t.oneoff).map(t => `
-    <div class="tpl" data-id="${t.id}" style="--c:${esc(t.color)}" title="Правый клик — настройка">
+    <div class="tpl" data-id="${t.id}" style="--c:${esc(t.color)}" title="Перетащите в календарь. Правый клик — настройка">
+      <button class="add" title="Создать задачу из шаблона" aria-label="Создать задачу из шаблона"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
       <span class="name">${esc(t.name)}</span>
-      <span class="meta"><span>${t.duration} мин</span><span>П${t.priority}</span>${t.use_weather ? '<span>☂</span>' : ''}</span>
-      <button class="icon small add" title="Создать задачу" aria-label="Создать задачу"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+      <span class="meta">${t.duration} мин  П${t.priority}${t.use_weather ? '  ☂' : ''}</span>
     </div>`).join('');
   document.querySelectorAll('.tpl').forEach(el => {
     const t = state.templates.find(x => x.id === +el.dataset.id);
@@ -313,14 +372,13 @@ function renderSide() {
     el.querySelector('.add').onclick = () => guard(() => newTask(t.id));
   });
   const un = state.tasks.filter(t => !t.start).sort((a, b) => a.priority - b.priority);
-  $('#un-count').textContent = un.length ? '· ' + un.length : '';
+  $('#un-count').textContent = un.length ? ' · ' + un.length : '';
   $('#unplaced').innerHTML = un.length ? un.map(t => `
-    <div class="un" style="--c:${esc(t.color)}">
+    <div class="un" style="--c:${esc(t.color)}"><div>
       <div class="un-head"><strong>${esc(t.title)}</strong><span class="prio">П${t.priority}</span></div>
-      <div class="reason">${esc(t.reason || '')}</div>
-      <button class="small" data-slots="${t.id}">Подобрать время</button>
-      <button class="small ghost" data-del="${t.id}">Удалить</button>
-    </div>`).join('') : '<p class="hint">Все задачи размещены</p>';
+      <span class="reason">${esc(t.reason || '')}</span>
+      <div class="acts"><button class="link" data-slots="${t.id}">Подобрать время</button><button class="ghost" data-del="${t.id}">Удалить</button></div>
+    </div></div>`).join('') : '<p class="hint">Все задачи размещены</p>';
   document.querySelectorAll('[data-slots]').forEach(b => b.onclick = () => guard(() => showSlots(+b.dataset.slots)));
   document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => guard(async () => {
     await api('DELETE', `/api/tasks/${b.dataset.del}`);
@@ -343,6 +401,12 @@ async function openTemplate(t, oneoff = false) {
   for (const k of ['name', 'activity', 'duration', 'buf_before', 'buf_after', 'win_from', 'win_to', 't_min', 't_max',
     'precip_max', 'cloud_max', 'wind_max', 'priority', 'min_gap', 'color']) f[k].value = t[k];
   f.use_weather.checked = t.use_weather;
+  const syncLook = () => {
+    dlg.style.setProperty('--c', f.color.value);
+    const pct = v => (Math.max(-30, Math.min(35, +v)) + 30) / 65 * 100, a = pct(Math.min(f.t_min.value, f.t_max.value));
+    Object.assign($('#t-range').style, {left: a + '%', width: pct(Math.max(f.t_min.value, f.t_max.value)) - a + '%'});
+  };
+  f.color.oninput = f.t_min.oninput = f.t_max.oninput = syncLook; syncLook();
   $('#tpl-days').innerHTML = WD.map((d, i) => `<label><input type="checkbox" name="bad_days" value="${i}" ${t.bad_days.includes(i) ? 'checked' : ''}> ${d}</label>`).join('');
   f.querySelectorAll('[name=bad_phen]').forEach(i => i.checked = t.bad_phen.includes(i.value));
   const sync = () => $('#tpl-weather').disabled = !f.use_weather.checked;
@@ -448,7 +512,45 @@ $('#ics-file').onchange = async e => {
 };
 $('#settings-btn').onclick = openSettings;
 $('#tpl-new').onclick = () => openTemplate(null);
-$('#oneoff-new').onclick = () => openTemplate(null, true);
+$('#oneoff-new').onclick = $('#oneoff-bar').onclick = () => openTemplate(null, true);
+
+// ---------- сворачиваемая боковая панель ----------
+function setSide(open) {
+  $('#side').hidden = !open;
+  const b = $('#side-btn'), label = open ? 'Свернуть боковую панель' : 'Развернуть боковую панель';
+  b.setAttribute('aria-pressed', open); b.title = label; b.setAttribute('aria-label', label);
+  $('#side-arrow').setAttribute('d', open ? 'M15 10l-2 2 2 2' : 'M13 10l2 2-2 2');
+  try { localStorage.side = open ? '1' : '0'; } catch {}
+  cal.updateSize();
+}
+$('#side-btn').onclick = () => setSide($('#side').hidden);
+try { if (localStorage.side === '0') setSide(false); } catch {}
+
+// ---------- мини-календарь ----------
+let mini = '';  // 'YYYY-MM' показанного месяца
+function renderMini() {
+  if (!mini) return;
+  const first = new Date(mini + '-01T00:00:00Z'), start = new Date(first);
+  start.setUTCDate(1 - (first.getUTCDay() + 6) % 7);
+  const today = nowLocal().slice(0, 10), v = cal.view;
+  const wk0 = iso(v.currentStart).slice(0, 10), wk1 = iso(v.currentEnd).slice(0, 10), inView = v.type !== 'dayGridMonth';
+  let cells = WD.map(d => `<span class="wd">${d}</span>`).join('');
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start); d.setUTCDate(start.getUTCDate() + i);
+    const ds = iso(d).slice(0, 10);
+    const cls = ['c', i % 7 >= 5 && 'we', ds.slice(0, 7) !== mini && 'other', ds === today && 'today',
+      inView && ds >= wk0 && ds < wk1 && 'wk'].filter(Boolean).join(' ');
+    cells += `<span class="${cls}"><button data-d="${ds}" aria-label="${d.getUTCDate()} ${d.toLocaleString('ru', {month: 'long', timeZone: 'UTC'})}">${d.getUTCDate()}</button></span>`;
+  }
+  $('#mini').innerHTML = `<div class="mh"><button class="icon" data-m="-1" aria-label="Предыдущий месяц">${ICON.prev}</button>
+    <span>${first.toLocaleString('ru', {month: 'long', year: 'numeric', timeZone: 'UTC'})}</span>
+    <button class="icon" data-m="1" aria-label="Следующий месяц">${ICON.next}</button></div><div class="mini-grid">${cells}</div>`;
+}
+$('#mini').onclick = e => {
+  const b = e.target.closest('button');
+  if (b?.dataset.d) cal.gotoDate(b.dataset.d);
+  if (b?.dataset.m) { const d = new Date(mini + '-15T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + +b.dataset.m); mini = iso(d).slice(0, 7); renderMini(); }
+};
 $('#autoplace').onclick = () => guard(async () => { toasts(await api('POST', '/api/tasks/autoplace')); await refresh(); });
 
 new FullCalendar.Draggable($('#templates'), {itemSelector: '.tpl'});
