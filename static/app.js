@@ -503,6 +503,34 @@ $('#city').onblur = () => setTimeout(() => { $('#city-list').hidden = true; if (
 $('#today').onclick = () => cal.today();
 $('#prev').onclick = () => cal.prev();
 $('#next').onclick = () => cal.next();
+
+// горизонтальная прокрутка (свайп тачпадом или Shift + колесо) листает период: один жест — один шаг
+let swipeX = 0, swiped = false, swipeIdle;
+$('#calendar').addEventListener('wheel', e => {
+  const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.shiftKey ? e.deltaY : 0;
+  if (!dx) return;
+  e.preventDefault();  // не даём системе листать историю
+  clearTimeout(swipeIdle);
+  swipeIdle = setTimeout(() => { swipeX = 0; swiped = false; }, 250);  // инерция тачпада — часть того же жеста
+  if (swiped) return;
+  swipeX += dx;
+  if (Math.abs(swipeX) < 80) return;
+  swipeX > 0 ? cal.next() : cal.prev();
+  swiped = true;
+}, {passive: false});
+
+// свайп пальцем на телефоне; быстрый жест, чтобы не мешать долгому нажатию, которым FullCalendar таскает задачи
+let touch0 = null;
+$('#calendar').addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  touch0 = e.touches.length === 1 ? {x: t.clientX, y: t.clientY, at: Date.now()} : null;
+}, {passive: true});
+$('#calendar').addEventListener('touchend', e => {
+  if (!touch0) return;
+  const t = e.changedTouches[0], dx = t.clientX - touch0.x, dy = t.clientY - touch0.y, quick = Date.now() - touch0.at < 600;
+  touch0 = null;
+  if (quick && Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) dx < 0 ? cal.next() : cal.prev();
+}, {passive: true});
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => cal.changeView(b.dataset.view));
 $('#import').onclick = () => $('#ics-file').click();
 $('#ics-file').onchange = async e => {
